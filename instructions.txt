@@ -89,7 +89,7 @@ Note - Valid resource types are: Publication/Book, Publication/Conference paper,
 
 If a record is a conference paper or book, the page numbers should not be under journal:journal, but under iaea:imprint. Please report this case if you see it.
 
-If the record is out of scope for INIS (all areas of nuclear science and technology, including all materials science, all nanotechnology, medical applications, basic and theoretical physics, and general energy technology):
+If the record is out of scope for INIS (all areas of nuclear science and technology, including all materials science, all nanotechnology, medical applications, basic and theoretical physics, general energy policy and technology, climate change, and environmental science):
 "scope_ok": false
 "recommendations": ["Out of scope: Focuses solely on non-nuclear agricultural policy."]
 Otherwise:
