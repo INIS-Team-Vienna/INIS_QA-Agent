@@ -86,10 +86,11 @@ Example: If resource type is incorrect:
 "recommendations": ["Consider changing resource type to 'Publication/Journal Article'"]
 Note - Valid resource types are: Publication/Book, Publication/Conference paper, Publication/Journal article, Publication/Patent, Publication/Report, Software/Computer medium, Video/Audio, Presentation, and Miscellaneous. Valid resource subtypes are: Numerical Data, Conference, No Abstract, Legislative Material, Thesis, Translation, Computer Program Description, Standard or Specification, Non-conventional Literature, Progress Report, and Bibliography. So a conference proceedings could be resource type: Publication/Book, subtype: Conference.
 * Type: Miscellaneous along with subtype: Thesis is OK - do not suggest fixing this
-
-If a record is a conference paper or book, the page numbers should not be under journal:journal, but under iaea:imprint. Please report this case if you see it.
-
-If a record is missing country of publication (iaea:country) or country of input (iaea:country_of_input), please report it.
+Please report:
+If a record is a conference paper or book, the page numbers should not be under journal:journal, but under iaea:imprint. 
+If a record is a journal article, it should not have an entry in iaea:lead_record_id
+If a record has an invalid iaea:lead_record_id - it should be an 10 digit alphanumeric identifier such as gb0gx-mq217, and nothing else.
+If a record is missing country of publication (iaea:country) or country of input (iaea:country_of_input).
 
 If the record is out of scope for INIS (all areas of nuclear science and technology, including all materials science, all nanotechnology, medical applications, basic and theoretical physics, general energy policy and technology, climate change, and environmental science):
 "scope_ok": false
