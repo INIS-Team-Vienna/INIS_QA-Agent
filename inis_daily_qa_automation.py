@@ -97,12 +97,22 @@ class INISQAAutomation:
         dated_dir.mkdir(parents=True, exist_ok=True)
         return dated_dir
         
-    def run_qa_checker(self, date: Optional[str] = None) -> bool:
+    def run_qa_checker(
+        self,
+        date: Optional[str] = None,
+        include_country_ids: Optional[List[str]] = None,
+        exclude_country_ids: Optional[List[str]] = None,
+        output_suffix: Optional[str] = None,
+    ) -> bool:
         """Run the QA checker script."""
         if not date:
             date = self.get_yesterday_date()
             
-        qa_date_dir = self.create_dated_directory(self.qa_results_dir, date)
+        qa_date_dir = self.create_dated_directory(
+            self.qa_results_dir,
+            date,
+            output_suffix or ""
+        )
         
         try:
             self.logger.info(f"Starting QA check for date: {date}")
@@ -122,6 +132,13 @@ class INISQAAutomation:
                 "--out", str(qa_date_dir),
                 "--date", date
             ]
+
+            if include_country_ids:
+                for cid in include_country_ids:
+                    cmd.extend(["--include-country-of-input", cid])
+            if exclude_country_ids:
+                for cid in exclude_country_ids:
+                    cmd.extend(["--exclude-country-of-input", cid])
             
             self.logger.info(f"Running command: {' '.join(cmd)}")
             self.logger.info(f"Azure OpenAI Endpoint: {env['ENDPOINT_URL']}")
@@ -155,6 +172,7 @@ class INISQAAutomation:
             date = self.get_yesterday_date()
             
         qa_date_dir = self.qa_results_dir / f"QAResults-{date}"
+        qa_germany_dir = self.qa_results_dir / f"QAResults-Germany-{date}"
         corrected_date_dir = self.create_dated_directory(
             self.corrected_records_dir, 
             date, 
@@ -171,18 +189,39 @@ class INISQAAutomation:
                 self.config.get("azure_openai", {})
             )
             
-            # Process all QA report files
+            success = True
+
+            # Process all QA report files (main)
             if qa_date_dir.exists():
                 report_files = list(qa_date_dir.glob("*-report.json"))
                 self.logger.info(f"Found {len(report_files)} QA reports to process")
-                
+
                 corrections_applied = processor.process_qa_reports(report_files)
-                
                 self.logger.info(f"Applied {corrections_applied} corrections")
-                return True
             else:
                 self.logger.warning(f"QA results directory not found: {qa_date_dir}")
-                return False
+                success = False
+
+            # Process Germany QA results if available
+            if qa_germany_dir.exists():
+                germany_corrected_dir = self.create_dated_directory(
+                    self.corrected_records_dir,
+                    date,
+                    "QAChecked-Germany"
+                )
+                germany_processor = AutoCorrectionProcessor(
+                    self.config["invenio_url"],
+                    str(germany_corrected_dir),
+                    self.config.get("azure_openai", {})
+                )
+                germany_reports = list(qa_germany_dir.glob("*-report.json"))
+                self.logger.info(f"Found {len(germany_reports)} Germany QA reports to process")
+                germany_corrections = germany_processor.process_qa_reports(germany_reports)
+                self.logger.info(f"Applied {germany_corrections} Germany corrections")
+            else:
+                self.logger.info(f"Germany QA results directory not found: {qa_germany_dir}")
+
+            return success
                 
         except Exception as e:
             self.logger.error(f"Error processing corrections: {e}")
@@ -194,6 +233,7 @@ class INISQAAutomation:
             date = self.get_yesterday_date()
             
         qa_date_dir = self.qa_results_dir / f"QAResults-{date}"
+        qa_germany_dir = self.qa_results_dir / f"QAResults-Germany-{date}"
         
         try:
             self.logger.info(f"Applying corrections to INIS for date: {date}")
@@ -216,6 +256,10 @@ class INISQAAutomation:
                 
                 # Process the QA folder
                 success = applier.process_qa_folder(qa_date_dir)
+
+                if qa_germany_dir.exists():
+                    germany_success = applier.process_qa_folder(qa_germany_dir)
+                    success = success and germany_success
                 
                 if success:
                     mode = "Applied corrections" if apply_changes else "Dry-run completed"
@@ -238,26 +282,43 @@ class INISQAAutomation:
             date = self.get_yesterday_date()
             
         qa_date_dir = self.qa_results_dir / f"QAResults-{date}"
+        qa_germany_dir = self.qa_results_dir / f"QAResults-Germany-{date}"
         
         try:
             self.logger.info(f"Sending daily report for date: {date}")
-            
+
+            success = True
+
             if qa_date_dir.exists():
-                success = send_qa_report(
+                main_success = send_qa_report(
                     str(qa_date_dir),
                     self.config["email"],
                     date
                 )
-                
-                if success:
-                    self.logger.info("Daily report sent successfully")
-                    return True
-                else:
+                if not main_success:
                     self.logger.error("Failed to send daily report")
-                    return False
+                    success = False
             else:
                 self.logger.error(f"QA results directory not found: {qa_date_dir}")
-                return False
+                success = False
+
+            if qa_germany_dir.exists():
+                germany_email_config = dict(self.config["email"])
+                germany_email_config["to_email"] = "silke.rehme@fiz-karlsruhe.de,inis.feedback@iaea.org"
+                germany_subject = f"INIS Daily Health Report (Germany) - {date}"
+                germany_success = send_qa_report(
+                    str(qa_germany_dir),
+                    germany_email_config,
+                    date,
+                    subject=germany_subject
+                )
+                if not germany_success:
+                    self.logger.error("Failed to send Germany daily report")
+                    success = False
+            else:
+                self.logger.info(f"Germany QA results directory not found: {qa_germany_dir}")
+
+            return success
                 
         except Exception as e:
             self.logger.error(f"Error sending daily report: {e}")
@@ -292,9 +353,18 @@ class INISQAAutomation:
         
         try:
             # Step 1: Run QA checker
-            if not self.run_qa_checker(date):
+            if not self.run_qa_checker(date, exclude_country_ids=["xa", "de"]):
                 self.logger.error("QA checker failed - aborting automation")
                 return False
+
+            # Step 1b: Run Germany QA checker
+            if not self.run_qa_checker(
+                date,
+                include_country_ids=["de"],
+                output_suffix="QAResults-Germany"
+            ):
+                self.logger.warning("Germany QA checker failed - continuing with workflow")
+                success = False
                 
             # Step 2: Process corrections
             if not self.process_corrections(date):

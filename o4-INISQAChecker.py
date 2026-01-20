@@ -38,7 +38,7 @@ AZURE_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 INSTRUCTIONS_PATH = os.getenv("QA_INSTRUCTIONS_FILE", "instructions.txt")
 
 if not AZURE_API_KEY:
-    sys.exit("❌  Set AZURE_OPENAI_API_KEY in your environment first!")
+    sys.exit("ERROR: Set AZURE_OPENAI_API_KEY in your environment first!")
 
 client = AzureOpenAI(
     azure_endpoint=AZURE_OPENAI_BASE,
@@ -91,11 +91,55 @@ def curl_json(url: str) -> Dict:
         return {}
 
 
-def fetch_records_by_date(base_url: str, date: str = None) -> List[Dict]:
+def _normalize_country_list(values: List[str]) -> List[str]:
+    """Normalize a list of country codes (comma or space separated)."""
+    if not values:
+        return []
+    normalized: List[str] = []
+    for raw in values:
+        if not raw:
+            continue
+        parts = re.split(r"[,\s]+", raw.strip())
+        for part in parts:
+            if part:
+                normalized.append(part.lower())
+    return normalized
+
+
+def _build_country_clause(field: str, include_ids: List[str]) -> str:
+    if not include_ids:
+        return ""
+    if len(include_ids) == 1:
+        return f'{field}: {include_ids[0]}'
+    joined = " OR ".join(f"{field}: {cid}" for cid in include_ids)
+    return f"({joined})"
+
+
+def build_records_query(date: str, include_ids: List[str], exclude_ids: List[str]) -> str:
+    clauses = [f'created:"{date}"', 'NOT custom_fields.iaea\\:qa_checked: (true)']
+
+    include_clause = _build_country_clause("custom_fields.iaea\\:country_of_input.id", include_ids)
+    if include_clause:
+        clauses.append(include_clause)
+
+    for cid in exclude_ids:
+        clauses.append(f'NOT custom_fields.iaea\\:country_of_input.id: {cid}')
+
+    return " AND ".join(clauses)
+
+
+def fetch_records_by_date(
+    base_url: str,
+    date: str = None,
+    include_country_ids: List[str] = None,
+    exclude_country_ids: List[str] = None,
+) -> List[Dict]:
     """Fetch records created on a given date (defaults to yesterday)."""
     if not date:
         date = yesterday_iso()
-    q = quote(f'created:"{date}" AND NOT custom_fields.iaea\:country_of_input.id: xa AND NOT custom_fields.iaea\:qa_checked: (true)')
+    include_ids = include_country_ids or []
+    exclude_ids = exclude_country_ids or ["xa"]
+    q = quote(build_records_query(date, include_ids, exclude_ids))
     url = f"{base_url}/api/records?q={q}&size=1000&sort=oldest"
     print(url)
     data = curl_json(url)
@@ -111,7 +155,7 @@ def load_json_dir(directory: str) -> List[Tuple[str, Dict]]:
                 with open(full, encoding="utf-8") as f:
                     out.append((full, json.load(f)))
             except json.JSONDecodeError as e:
-                print(f"❌  {fn}: JSON error – {e}")
+                print(f"ERROR: {fn}: JSON error - {e}")
     return out
 
 
@@ -184,7 +228,7 @@ def send_to_gpt(record: dict, system_prompt: str) -> str:
             # Optional: log token usage / finish reason for audits
             fr = completion.choices[0].finish_reason
             usage = completion.usage
-            print(f"ℹ️ finish_reason={fr}, prompt={usage.prompt_tokens}, "
+            print(f"finish_reason={fr}, prompt={usage.prompt_tokens}, "
                   f"completion={usage.completion_tokens}")
 
             return completion.choices[0].message.content
@@ -192,7 +236,7 @@ def send_to_gpt(record: dict, system_prompt: str) -> str:
         except (RateLimitError, APITimeoutError, APIConnectionError):
             # exponential back-off: 1 s → 2 s → 4 s → 8 s
             sleep = 2 ** attempt
-            print(f"⏳ transient error – retrying in {sleep}s…")
+            print(f"Transient error - retrying in {sleep}s...")
             time.sleep(sleep)
         except Exception:            # unexpected problems propagate
             raise
@@ -257,16 +301,16 @@ def qa_check(batch: List[Tuple[str, Dict]], invenio_url: str, out_dir: str, verb
 
         # feedback -----------------------------------------------------------
         if "error" in ai_json:
-            print(f"🔍 {report_path}: ❌ {ai_json['error']}")
+            print(f"{report_path}: ERROR {ai_json['error']}")
         elif needs_output:
-            print(f"🔍 {report_path}: ⚠️  Fixes/Advice emitted")
+            print(f"{report_path}: Fixes/Advice emitted")
         else:
-            print(f"🔍 {report_path}: ✅ All OK")
+            print(f"{report_path}: All OK")
 
         if verbose:
-            print("── Assistant raw reply (truncated 300 chars) ──")
-            print(ai_raw[:300].replace("\n", " ") + (" …" if len(ai_raw) > 300 else ""))
-            print("────────────────────────────────────────────")
+            print("-- Assistant raw reply (truncated 300 chars) --")
+            print(ai_raw[:300].replace("\n", " ") + (" ..." if len(ai_raw) > 300 else ""))
+            print("--------------------------------------------")
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -278,6 +322,8 @@ if __name__ == "__main__":
     parser.add_argument("--out", default="c:\\QAResults", help="Output directory")
     parser.add_argument("--verbose", action="store_true", help="Show assistant snippet in console")
     parser.add_argument("--date", help="Date to fetch records from (YYYY-MM-DD)")
+    parser.add_argument("--include-country-of-input", action="append", help="Include only these country codes (comma or space separated)")
+    parser.add_argument("--exclude-country-of-input", action="append", help="Exclude these country codes (comma or space separated)")
     args = parser.parse_args()
     base_url = args.live or DEFAULT_INVENIO_URL
     print (base_url)
@@ -286,11 +332,18 @@ if __name__ == "__main__":
     if args.dir:
         records = load_json_dir(args.dir)
     elif args.live:
-        fetched = fetch_records_by_date(base_url, date=args.date)
+        include_ids = _normalize_country_list(args.include_country_of_input or [])
+        exclude_ids = _normalize_country_list(args.exclude_country_of_input or [])
+        fetched = fetch_records_by_date(
+            base_url,
+            date=args.date,
+            include_country_ids=include_ids,
+            exclude_country_ids=exclude_ids if exclude_ids else None,
+        )
         records = [(f"{r.get('id', f'record_{i}')}.json", r) for i, r in enumerate(fetched)]
     else:
-        sys.exit("❌  Specify --dir or --live")
+        sys.exit("ERROR: Specify --dir or --live")
 
-    print(f"🔎  QA-checking {len(records)} record(s)…\n")
+    print(f"QA-checking {len(records)} record(s)...\n")
     qa_check(records, base_url, str(out_dir), verbose=args.verbose)
-    print(f"\n✅  Done. Reports → {out_dir}")
+    print(f"\nDone. Reports -> {out_dir}")

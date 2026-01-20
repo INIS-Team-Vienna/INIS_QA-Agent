@@ -30,7 +30,10 @@ class QAEmailSender:
         self.smtp_server = email_config.get("smtp_server", "smtp.gmail.com")
         self.smtp_port = email_config.get("smtp_port", 587)
         self.from_email = email_config.get("from_email")
-        self.to_email = email_config.get("to_email", "inis.feedback@iaea.org")
+        to_email = email_config.get("to_email", "inis.feedback@iaea.org")
+        if isinstance(to_email, (list, tuple, set)):
+            to_email = ", ".join([str(addr) for addr in to_email if addr])
+        self.to_email = to_email
         self.app_password = email_config.get("app_password")
         
         if not self.from_email or not self.app_password:
@@ -352,7 +355,13 @@ class QAEmailSender:
         """Send an email with the specified subject and body."""
         return self.send_email_with_attachment(subject, body)
 
-def send_qa_report(qa_folder: str, email_config: Dict, date: str) -> bool:
+def send_qa_report(
+    qa_folder: str,
+    email_config: Dict,
+    date: str,
+    subject: Optional[str] = None,
+    to_email: Optional[str] = None,
+) -> bool:
     """
     Main function to send QA report email with attached results.
     
@@ -360,12 +369,17 @@ def send_qa_report(qa_folder: str, email_config: Dict, date: str) -> bool:
         qa_folder: Path to folder containing QA report JSON files
         email_config: Email configuration dictionary
         date: Date string for the report
+        subject: Optional subject override
+        to_email: Optional recipient override (string or comma-separated)
         
     Returns:
         bool: True if email was sent successfully, False otherwise
     """
     try:
-        sender = QAEmailSender(email_config)
+        effective_config = dict(email_config)
+        if to_email:
+            effective_config["to_email"] = to_email
+        sender = QAEmailSender(effective_config)
         report_data = sender.create_summary_report(qa_folder)
         
         if not report_data:
@@ -373,7 +387,7 @@ def send_qa_report(qa_folder: str, email_config: Dict, date: str) -> bool:
             return False
             
         email_body = sender.format_email_body(report_data, date)
-        subject = f"INIS QA Check Results - {date}"
+        subject = subject or f"INIS QA Check Results - {date}"
         
         # Create archive attachment with QA results
         attachment_path = sender.create_qa_results_archive(qa_folder)
