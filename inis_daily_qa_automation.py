@@ -353,7 +353,7 @@ class INISQAAutomation:
         
         try:
             # Step 1: Run QA checker
-            if not self.run_qa_checker(date, exclude_country_ids=["xa", "de"]):
+            if not self.run_qa_checker(date, exclude_country_ids=["de"]):
                 self.logger.error("QA checker failed - aborting automation")
                 return False
 

@@ -116,7 +116,10 @@ def _build_country_clause(field: str, include_ids: List[str]) -> str:
 
 
 def build_records_query(date: str, include_ids: List[str], exclude_ids: List[str]) -> str:
-    clauses = [f'created:"{date}"', 'NOT custom_fields.iaea\\:qa_checked: (true)']
+    clauses = [
+        'NOT custom_fields.iaea\\:qa_checked: (true)',
+        '_exists_:custom_fields.iaea\\:index_status',
+    ]
 
     include_clause = _build_country_clause("custom_fields.iaea\\:country_of_input.id", include_ids)
     if include_clause:
@@ -134,11 +137,11 @@ def fetch_records_by_date(
     include_country_ids: List[str] = None,
     exclude_country_ids: List[str] = None,
 ) -> List[Dict]:
-    """Fetch records created on a given date (defaults to yesterday)."""
+    """Fetch records matching the QA/index-status query (date optional for compatibility)."""
     if not date:
         date = yesterday_iso()
     include_ids = include_country_ids or []
-    exclude_ids = exclude_country_ids or ["xa"]
+    exclude_ids = exclude_country_ids or []
     q = quote(build_records_query(date, include_ids, exclude_ids))
     url = f"{base_url}/api/records?q={q}&size=1000&sort=oldest"
     print(url)
