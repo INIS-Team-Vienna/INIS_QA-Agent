@@ -90,7 +90,7 @@ Please report:
 If a record is a conference paper or book, the page numbers should not be under journal:journal, but under iaea:imprint. 
 If a record is a journal article, it should not have an entry in iaea:lead_record_id
 If a record's iaea:lead_record_id does not match the regex: ^[a-z0-9]{5}-[a-z0-9]{5}$
-If a record is missing country of publication (iaea:country) or country of input (iaea:country_of_input).
+If a record is missing country of publication (iaea:country) or country of input (iaea:country_of_input) - international organizations are OK as countries.
 If a record has "iaea:index_status": "Insufficient Index Confidence", indicate "NADIA insufficient confidence, please index manually"
 
 If the record is out of scope for INIS (all areas of nuclear science and technology, including all materials science, all nanotechnology, medical applications, basic and theoretical physics, general energy policy and technology, climate change, and environmental science):
