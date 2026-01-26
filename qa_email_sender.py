@@ -234,15 +234,46 @@ class QAEmailSender:
 
         # General recommendations
         if report_data["general_recommendations"]:
-            lines.extend([
-                "GENERAL RECOMMENDATIONS:",
-                "Records requiring manual review:"
-            ])
+            nadia_recommendations = {}
+            general_recommendations = {}
+            nadia_markers = ("nadia insufficient confidence", "insufficient index confidence")
+
             for record_id, recommendations in report_data["general_recommendations"].items():
-                lines.append(f"• https://inis.iaea.org/records/{record_id}")
+                nadia_recs = []
+                other_recs = []
                 for rec in recommendations:
-                    lines.append(f"  - {rec}")
-                lines.append("")
+                    rec_lower = rec.lower()
+                    if any(marker in rec_lower for marker in nadia_markers):
+                        nadia_recs.append(rec)
+                    else:
+                        other_recs.append(rec)
+
+                if nadia_recs:
+                    nadia_recommendations[record_id] = nadia_recs
+                if other_recs:
+                    general_recommendations[record_id] = other_recs
+
+            if general_recommendations:
+                lines.extend([
+                    "GENERAL RECOMMENDATIONS:",
+                    "Records requiring manual review:"
+                ])
+                for record_id, recommendations in general_recommendations.items():
+                    lines.append(f"• https://inis.iaea.org/records/{record_id}")
+                    for rec in recommendations:
+                        lines.append(f"  - {rec}")
+                    lines.append("")
+
+            if nadia_recommendations:
+                lines.extend([
+                    "NADIA INSUFFICIENT CONFIDENCE:",
+                    "Records requiring manual indexing:"
+                ])
+                for record_id, recommendations in nadia_recommendations.items():
+                    lines.append(f"• https://inis.iaea.org/records/{record_id}")
+                    for rec in recommendations:
+                        lines.append(f"  - {rec}")
+                    lines.append("")
 
         # Descriptor deletions
         if report_data["descriptor_deletions"]:
