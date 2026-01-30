@@ -50,7 +50,7 @@ Also include:
 
 ORGANIZATIONAL AUTHORS
 
-Same rules as above apply
+Same rules as above apply - note: do not correct "(and others)" as an author
 Use:
 {
 "old_organizational_author": "Kernforschungsanlage Jülich",
