@@ -171,6 +171,14 @@ def add_related_identifiers(record: Dict, identifiers: List[Dict]) -> int:
     return added
 
 
+def apply_qa_checked(record: Dict) -> bool:
+    custom_fields = record.setdefault("custom_fields", {})
+    if custom_fields.get("iaea:qa_checked") is True:
+        return False
+    custom_fields["iaea:qa_checked"] = True
+    return True
+
+
 def safe_move(src: Path, dest_dir: Path, dry_run: bool) -> None:
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / src.name
@@ -411,9 +419,13 @@ def process(
             continue
 
         processed += 1
-        changed, actions, unapplied = apply_corrections(record, report)
-        if changed:
+        corrections_changed, actions, unapplied = apply_corrections(record, report)
+        qa_changed = apply_qa_checked(record)
+        if qa_changed:
+            actions.append("QA checked flag set")
+        if corrections_changed:
             corrected += 1
+        if corrections_changed or qa_changed:
             save_json(record_path, record, dry_run)
 
         move_out = should_move_out_of_scope(report)
